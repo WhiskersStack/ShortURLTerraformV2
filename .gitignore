@@ -1,0 +1,13 @@
+.terraform/providers/registry.terraform.io/hashicorp/aws/6.4.0/linux_amd64/terraform-provider-aws_v6.4.0_x5
+.terraform/providers/registry.terraform.io/hashicorp/aws/6.4.0/linux_amd64/LICENSE.txt
+.terraform.lock.hcl
+terraform.tfstate
+.venv
+terraform.tfstate.backup
+.terraform/modules/modules.json
+.terraform/providers/registry.terraform.io/hashicorp/archive/2.7.1/linux_amd64/LICENSE.txt
+.terraform/providers/registry.terraform.io/hashicorp/archive/2.7.1/linux_amd64/terraform-provider-archive_v2.7.1_x5
+.terraform/providers/registry.terraform.io/hashicorp/null/3.2.4/linux_amd64/LICENSE.txt
+.terraform/providers/registry.terraform.io/hashicorp/null/3.2.4/linux_amd64/terraform-provider-null_v3.2.4_x5
+.terraform/providers/registry.terraform.io/hashicorp/template/2.2.0/linux_amd64/terraform-provider-template_v2.2.0_x4
+modules/lambda/lambda.zip

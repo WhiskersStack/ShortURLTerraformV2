@@ -1,0 +1,96 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Static short-URL site behind CloudFront with private S3 origin
+
+Parameters:
+  BucketName:
+    Type: String
+    Default: whiskers-url-site      # must be globally unique
+  SiteIndex:
+    Type: String
+    Default: WhiskersURL.html       # root document
+
+Resources:
+
+  # 1. S3 bucket (private) with static-website hosting
+  SiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      WebsiteConfiguration:
+        IndexDocument: !Ref SiteIndex
+        ErrorDocument: !Ref SiteIndex
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls:       true
+        IgnorePublicAcls:      true
+        BlockPublicPolicy:     true
+        RestrictPublicBuckets: true
+
+  # 2. CloudFront Origin Access Control (OAC)
+  SiteOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-oac"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # 3. CloudFront distribution
+  SiteDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        DefaultRootObject: !Ref SiteIndex
+
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt SiteBucket.RegionalDomainName
+            OriginAccessControlId: !Ref SiteOAC
+            S3OriginConfig: {}
+
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods:  [GET, HEAD]
+          Compress: true
+
+          # Required when not using CachePolicyId / OriginRequestPolicyId
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+
+        PriceClass: PriceClass_All   # reduce cost with PriceClass_100/200 if desired
+      Tags:
+        - Key: Project
+          Value: ShortURL
+
+  # 4. Bucket policy – grants read only to this CloudFront distribution
+  SiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    DependsOn: SiteDistribution      # make sure distribution exists first
+    Properties:
+      Bucket: !Ref SiteBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${SiteBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${SiteDistribution}"
+
+Outputs:
+  CloudFrontURL:
+    Description: Public HTTPS endpoint
+    Value: !GetAtt SiteDistribution.DomainName
+
+  DistributionId:                    # ← ADD THIS BLOCK
+    Description: CloudFront distribution ID
+    Value: !Ref SiteDistribution
