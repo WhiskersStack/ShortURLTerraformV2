@@ -12,11 +12,13 @@ aws s3api list-object-versions \
   --query 'Versions[].{Key:Key,VersionId:VersionId}' \
   --output text \
 | while read -r key version; do
-    aws s3api delete-object \
-      --bucket "$bucket" \
-      --key "$key" \
-      --version-id "$version" \
-      >/dev/null
+    if [ -n "$version" ]; then
+      aws s3api delete-object \
+        --bucket "$bucket" \
+        --key "$key" \
+        --version-id "$version" \
+        >/dev/null
+    fi
   done
 
 # 2) Delete all delete-markers
@@ -26,11 +28,13 @@ aws s3api list-object-versions \
   --query 'DeleteMarkers[].{Key:Key,VersionId:VersionId}' \
   --output text \
 | while read -r key version; do
-    aws s3api delete-object \
-      --bucket "$bucket" \
-      --key "$key" \
-      --version-id "$version" \
-      >/dev/null
+    if [ -n "$version" ]; then
+      aws s3api delete-object \
+        --bucket "$bucket" \
+        --key "$key" \
+        --version-id "$version" \
+        >/dev/null
+    fi
   done
 
 # 3) Fallback for any remaining objects
