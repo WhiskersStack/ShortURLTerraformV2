@@ -1,3 +1,3 @@
 variable "environment" {
-  default = "dev"
+  default = "demo123123"
 }

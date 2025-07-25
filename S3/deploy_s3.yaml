@@ -11,6 +11,31 @@ Parameters:
 
 Resources:
 
+  # 0. Logging bucket — CloudFront writes its access logs here
+  LogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${BucketName}-cf-logs"
+
+      # allow ACLs again under OwnershipControls
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+
+      AccessControl: LogDeliveryWrite
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: auto-expire
+            Status: Enabled
+            ExpirationInDays: 30
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+
   # 1. S3 bucket (private) with static-website hosting
   SiteBucket:
     Type: AWS::S3::Bucket
@@ -62,7 +87,13 @@ Resources:
             Cookies:
               Forward: none
 
+        Logging:                     # ← injected logging block
+          Bucket: !GetAtt LogBucket.RegionalDomainName
+          IncludeCookies: false
+          Prefix: access-logs/
+
         PriceClass: PriceClass_All   # reduce cost with PriceClass_100/200 if desired
+
       Tags:
         - Key: Project
           Value: ShortURL
@@ -91,6 +122,6 @@ Outputs:
     Description: Public HTTPS endpoint
     Value: !GetAtt SiteDistribution.DomainName
 
-  DistributionId:                    # ← ADD THIS BLOCK
+  DistributionId:
     Description: CloudFront distribution ID
     Value: !Ref SiteDistribution
