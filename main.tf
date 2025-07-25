@@ -1,16 +1,23 @@
+###############################################################################
+#  Providers
+###############################################################################
 terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 5.0" # v5+ definitely has the resource
+      version = ">= 5.0"
     }
   }
-
   required_version = ">= 1.3.0"
 }
+
 provider "aws" {
-  region = "us-west-2" # or your preferred region
+  region = "us-west-2"
 }
+
+###############################################################################
+#  STATIC-SITE  (CloudFormation stack)
+###############################################################################
 module "static_site" {
   source        = "./modules/static_site_cf"
   stack_name    = "short-url-site-${var.environment}"
@@ -24,12 +31,14 @@ module "static_site" {
   }
 }
 
-
 output "static_site_url" {
-  value       = module.static_site.cloudfront_domain
   description = "CloudFront URL of the deployed static site"
+  value       = module.static_site.cloudfront_domain
 }
 
+###############################################################################
+#  LAMBDA  &  DYNAMODB
+###############################################################################
 
 module "lambda" {
   source = "./modules/lambda"
@@ -86,21 +95,32 @@ resource "null_resource" "upload_assets" {
   ]
 }
 
-##############################################
-#  Empty bucket just before destroy
-##############################################
+###############################################################################
+#  CLEAN MAIN SITE BUCKET ON DESTROY
+###############################################################################
 resource "null_resource" "clean_bucket" {
-  # Triggers are stored in the resource state,
-  # so they're still available during destroy.
-  triggers = {
-    bucket = module.static_site.bucket_name
-  }
+  triggers = { bucket = "whiskers-url-site-${var.environment}" }
 
   provisioner "local-exec" {
     when    = destroy
     command = "${path.module}/scripts/empty_bucket.sh ${self.triggers.bucket}"
   }
 
-  # Make sure the bucket exists first
-  depends_on = [module.static_site]
+  # run *before* the CF stack is deleted
+  depends_on = [ module.static_site ]
+}
+
+###############################################################################
+#  CLEAN LOG BUCKET ON DESTROY
+###############################################################################
+resource "null_resource" "clean_log_bucket" {
+  triggers = { bucket = "whiskers-url-site-${var.environment}-cf-logs" }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "${path.module}/scripts/empty_bucket.sh ${self.triggers.bucket}"
+  }
+
+  # run *before* the CF stack is deleted
+  depends_on = [ module.static_site ]
 }
