@@ -1,107 +1,152 @@
-# 🐾 WhiskersStack — Serverless URL Shortener (Terraform)
+# ShortURLTerraformV2
 
-
-
-WhiskersStack is a **fully‑serverless URL‑shortening service** powered by AWS Lambda, DynamoDB, S3 and CloudFront.\
-Every layer of the stack is declared in **Terraform**, so you can spin up a brand‑new environment (or tear it down) with a single command.
+An end‑to‑end, infrastructure‑as‑code template that deploys a **serverless URL shortener** on AWS using Terraform.  It marries a low‑latency static front‑end with a scalable Lambda + DynamoDB back‑end, wrapped in CloudFront for global reach and SSL by default.
 
 ---
 
-## ✨ Architecture at a Glance
+## 🗺️ High‑Level Architecture
 
-| Layer        | Implementation                                                                       |
-| ------------ | ------------------------------------------------------------------------------------ |
-| **Frontend** | Static site (HTML + JS) served from a **private S3 bucket** via **CloudFront + OAC** |
-| **API**      | Python 3.12 Lambda function exposed through a **Lambda Function URL** (no API GW)    |
-| **Storage**  | DynamoDB table `id → long_url` in *on‑demand* `PAY_PER_REQUEST` mode                 |
-| **IaC**      | Terraform 1.3+ with three reusable modules (`lambda`, `dynamoDB`, `static_site_cf`)  |
+```mermaid
+flowchart TD
+    subgraph EdgeLayer["AWS Edge (Global)"]
+        CF[CloudFront Distribution]
+    end
+
+    subgraph StaticHosting["Static Site"]
+        S3[(S3 Bucket – public read blocked, OAI access)]
+    end
+
+    subgraph Backend["API & Storage"]
+        LF[Lambda Function (Python)]
+        DB[(DynamoDB Table: WhiskersURL)]
+    end
+
+    subgraph Monitoring["Observability"]
+        CW[CloudWatch Alarms]
+        SNS[(SNS Topic – optional)]
+    end
+
+    User((Client Browser)) -->|HTTPS| CF
+    CF -->|Assets| S3
+    CF -- Redirect requests --> LF
+    LF -- Read/Write --> DB
+    LF -- Logs & Metrics --> CW
+    CW -- Notify --> SNS
+```
+
+**Key flows**
+
+* **Static content** (`index.html`, PNG logo) is served from the S3 bucket via CloudFront for low‑latency global delivery.
+* **Short URL hits** reach the same CloudFront distribution; path‑based routing forwards them to the Lambda Function URL, which looks up the destination in DynamoDB and responds with an HTTP 301.
+* **Observability** is handled with CloudWatch metrics and alarms (e.g., Lambda errors, 5XX rates) that can fan out alerts to an optional SNS topic.
+
+> *GitHub renders Mermaid diagrams automatically. They respect the viewer’s dark/light theme.*
 
 ---
 
-## 📂 Repository Layout
+## Repository Layout (TL;DR)
 
 ```text
-ShortURLTerraform/
-├─ S3/
-│  └─ website/
-│     ├─ WhiskersURL.tpl.html      # HTML template → rendered → WhiskersURL.html
-│     └─ whiskersstack-logo.png    # brand asset
-├─ lambda_func/
-│  └─ lambda_function.py           # URL‑shortener handler
-├─ modules/
-│  ├─ dynamoDB/                    # DynamoDB table
-│  ├─ lambda/                      # Lambda + Function URL (uses existing *LabRole*)
-│  └─ static_site_cf/              # Runs the CloudFormation template for S3 + CF
-├─ scripts/
-│  ├─ deploy_assets.sh             # Uploads extra assets + invalidates CloudFront
-│  └─ empty_bucket.sh              # Empties bucket (called at destroy‑time)
-├─ main.tf                         # Root orchestration
-├─ static_site_html.tf             # Render + upload WhiskersURL.html
-└─ variables.tf
+.
+├── main.tf              # root orchestrator
+├── variables.tf         # global knobs (region, tags, etc.)
+├── outputs.tf           # exported values (CF domain, ARNs, …)
+├── modules/             # reusable building blocks
+│   ├── dynamoDB/
+│   ├── lambda/
+│   └── static_site_cf/
+├── S3/                  # CloudFormation template + website assets
+├── lambda_func/         # Python handler source
+├── scripts/             # helper shell scripts (deploy & cleanup)
+└── monitoring.tf        # CloudWatch alarms
 ```
 
 ---
 
-## 🛠 Prerequisites
+## Prerequisites
 
-- **Terraform ≥ 1.3**
-- **AWS CLI** configured (profile or environment variables)
-- An existing IAM role `` with:
-  - `LabRole`
-  - `dynamodb:PutItem` & `dynamodb:GetItem` on the URL table (module can attach if missing)
-  - `s3:PutObject` & `s3:GetObject` on the site bucket (for the asset‑upload script)
+* Terraform >= 1.3
+* AWS CLI configured with credentials that can create IAM roles, Lambda, S3, CloudFront, and DynamoDB
+* A registered domain in Route 53 *(optional – for a custom vanity host)*
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
-# 1 – Initialise & deploy the entire stack
+# 1) Initialise providers & modules
 terraform init
-terraform apply -auto-approve
 
-# 2 – Upload extra static assets (logo, CSS, etc.)
-./scripts/deploy_assets.sh \
-  $(terraform output -raw module.static_site.bucket_name) \
-  $(terraform output -raw module.static_site.cloudfront_distribution_id) \
-  S3/website/whiskersstack-logo.png
+# 2) See what will be created
+terraform plan -out tfplan
 
-# 3 – Open the site once CloudFront shows "Deployed"
-open "https://$(terraform output -raw static_site_url)"
+# 3) Launch the stack
+terraform apply tfplan
+
+# 4) Upload/Invalidate assets (runs automatically via null_resource, but you can force):
+./scripts/deploy_assets.sh
 ```
 
-> **Note:** the first apply can take \~15 minutes while CloudFront provisions.
-
----
-
-## 🔄 Update Workflow
-
-| Change                                     | What to run                  | Notes                                                         |
-| ------------------------------------------ | ---------------------------- | ------------------------------------------------------------- |
-| **Lambda code**                            | `terraform apply`            | `archive_file` detects checksum → new function version.       |
-| **HTML template** (`WhiskersURL.tpl.html`) | `terraform apply`            | Terraform re‑renders, uploads and auto‑invalidates CF.        |
-| **Static assets** (logo, CSS, JS)          | `scripts/deploy_assets.sh …` | Pass bucket, distribution ID & file list; script invalidates. |
-
----
-
-## 🧹 Tear‑Down
+After \~10 minutes, Terraform exports the CloudFront URL. Browse to it and shorten your first link:
 
 ```bash
-# 1 – Empty the bucket (avoids DELETE_FAILED on SiteBucket)
-./scripts/empty_bucket.sh $(terraform output -raw module.static_site.bucket_name)
-
-# 2 – Destroy all infrastructure
-terraform destroy -auto-approve
+curl -i "https://<cloudfront-domain>/abc123"
 ```
 
 ---
 
-## 🗺️ Roadmap & Ideas
+## Clean Up
 
-- Custom domain + ACM certificate for CloudFront
-- Link expiry via DynamoDB TTL
-- Click‑tracking (increment counter per redirect)
-- GitHub Action to run `terraform plan` + asset upload in CI
+```bash
+terraform destroy
+```
 
-Pull requests welcome — let’s keep the whiskers sharp! 😸
+The destroy phase empties the S3 bucket versions first (via `scripts/empty_bucket.sh`) to avoid the classic *"bucket not empty"* error.
 
+---
+
+## Cost Footprint (us‑east‑1, 1 M hits/month)
+
+| Component                 | Monthly Cost (USD) |
+| ------------------------- | ------------------ |
+| S3 Storage                | < 0.10             |
+| CloudFront                | \~ 2.50            |
+| Lambda (128 MB)           | \~ 0.20            |
+| DynamoDB (1 WCUs, 1 RCUs) | < 0.25             |
+| **Total**                 | **≈ 3 USD**        |
+
+> Costs scale linearly with traffic; staying well within AWS Free Tier for small projects.
+
+---
+
+## Extending the Stack
+
+* **Custom Domain + HTTPS**
+
+  * Add a `aws_route53_record` for `@` and `www` → CloudFront domain.
+  * Request an ACM certificate in us‑east‑1 (required by CloudFront) and attach it via the `static_site_cf` module.
+* **CI/CD**
+
+  * Replace `null_resource.upload_assets` with a GitHub Actions workflow that runs `aws s3 sync` + `aws cloudfront create-invalidation` on `main` branch pushes.
+* **Analytics**
+
+  * Stream CloudFront access logs to S3 and query with Athena.
+* **Authentication**
+
+  * Swap Lambda for an API Gateway + Cognito authorizer if you need per‑user quotas.
+
+---
+
+## Troubleshooting
+
+| Symptom                       | Fix                                                                                                               |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `403 Forbidden` on assets     | Check that OAI is attached and S3 public access is blocked correctly. Re‑run `deploy_assets.sh` if paths changed. |
+| `502/504` on short URL hits   | Verify Lambda URL endpoint is in the `origins` list of CloudFront and health checks pass.                         |
+| Terraform destroy fails on S3 | Ensure **all** object versions are purged; the provided `empty_bucket.sh` handles versioned buckets.              |
+
+---
+
+## Acknowledgements
+
+Made with 💻 Terraform, ☁️ AWS, and a healthy dose of curiosity.
