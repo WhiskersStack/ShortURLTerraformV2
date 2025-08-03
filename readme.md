@@ -10,25 +10,25 @@ An end‑to‑end, infrastructure‑as‑code template that deploys a **serverle
 flowchart TD
     %% Edge Layer
     subgraph "AWS Edge (Global)"
-        CF[CloudFront Distribution]
+        CF["CloudFront Distribution"]
     end
 
     %% Static Hosting
     subgraph "Static Site"
-        S3[S3 Bucket
-(OAI access)]
+        S3["S3 Bucket
+(OAI access)"]
     end
 
     %% Backend
     subgraph "API & Storage"
-        LF[Lambda Function (Python)]
-        DB[DynamoDB Table]
+        LF["Lambda Function (Python)"]
+        DB["DynamoDB Table"]
     end
 
     %% Monitoring
     subgraph "Observability"
-        CW[CloudWatch Alarms]
-        SNS[SNS Topic]
+        CW["CloudWatch Alarms"]
+        SNS["SNS Topic"]
     end
 
     %% Flows
@@ -42,9 +42,9 @@ flowchart TD
 
 **Key flows**
 
-- **Static content** (`index.html`, PNG logo) is served from the S3 bucket via CloudFront for low‑latency global delivery.
-- **Short URL hits** reach the same CloudFront distribution; path‑based routing forwards them to the Lambda Function URL, which looks up the destination in DynamoDB and responds with an HTTP 301.
-- **Observability** is handled with CloudWatch metrics and alarms (e.g., Lambda errors, 5XX rates) that can fan out alerts to an optional SNS topic.
+* **Static content** (`index.html`, PNG logo) is served from the S3 bucket via CloudFront for low‑latency global delivery.
+* **Short URL hits** reach the same CloudFront distribution; path‑based routing forwards them to the Lambda Function URL, which looks up the destination in DynamoDB and responds with an HTTP 301.
+* **Observability** is handled with CloudWatch metrics and alarms (e.g., Lambda errors, 5XX rates) that can fan out alerts to an optional SNS topic.
 
 > *GitHub renders Mermaid diagrams automatically. They respect the viewer’s dark/light theme.*
 
@@ -71,9 +71,9 @@ flowchart TD
 
 ## Prerequisites
 
-- Terraform >= 1.3
-- AWS CLI configured with credentials that can create IAM roles, Lambda, S3, CloudFront, and DynamoDB
-- A registered domain in Route 53 *(optional – for a custom vanity host)*
+* Terraform >= 1.3
+* AWS CLI configured with credentials that can create IAM roles, Lambda, S3, CloudFront, and DynamoDB
+* A registered domain in Route 53 *(optional – for a custom vanity host)*
 
 ---
 
@@ -127,15 +127,19 @@ The destroy phase empties the S3 bucket versions first (via `scripts/empty_bucke
 
 ## Extending the Stack
 
-- **Custom Domain + HTTPS**
-  - Add a `aws_route53_record` for `@` and `www` → CloudFront domain.
-  - Request an ACM certificate in us‑east‑1 (required by CloudFront) and attach it via the `static_site_cf` module.
-- **CI/CD**
-  - Replace `null_resource.upload_assets` with a GitHub Actions workflow that runs `aws s3 sync` + `aws cloudfront create-invalidation` on `main` branch pushes.
-- **Analytics**
-  - Stream CloudFront access logs to S3 and query with Athena.
-- **Authentication**
-  - Swap Lambda for an API Gateway + Cognito authorizer if you need per‑user quotas.
+* **Custom Domain + HTTPS**
+
+  * Add a `aws_route53_record` for `@` and `www` → CloudFront domain.
+  * Request an ACM certificate in us‑east‑1 (required by CloudFront) and attach it via the `static_site_cf` module.
+* **CI/CD**
+
+  * Replace `null_resource.upload_assets` with a GitHub Actions workflow that runs `aws s3 sync` + `aws cloudfront create-invalidation` on `main` branch pushes.
+* **Analytics**
+
+  * Stream CloudFront access logs to S3 and query with Athena.
+* **Authentication**
+
+  * Swap Lambda for an API Gateway + Cognito authorizer if you need per‑user quotas.
 
 ---
 
@@ -152,4 +156,3 @@ The destroy phase empties the S3 bucket versions first (via `scripts/empty_bucke
 ## Acknowledgements
 
 Made with 💻 Terraform, ☁️ AWS, and a healthy dose of curiosity.
-
